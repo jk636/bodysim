@@ -1,0 +1,10 @@
+Flask
+trimesh
+pyvista
+numpy
+pydicom
+scikit-image
+Pillow
+pytest
+pytest-mock
+# Add other testing-related packages if needed, e.g., pytest-cov
