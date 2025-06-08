@@ -1,0 +1,11 @@
+HumanBody
+ ├── Organ (abstract base)
+ │     ├── Brain
+ │     ├── Heart
+ │     ├── Lungs
+ │     ├── Liver
+ │     ├── Kidneys
+ │     ├── Muscle
+ │     ├── Bone
+ │     └── Skin
+ └── MeshLoader (load polygonal data)
