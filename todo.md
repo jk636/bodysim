@@ -2,7 +2,7 @@
 
 ## Mesh Handling
 - [ ] Implement robust polygon mesh loading (OBJ/STL) for all organ scenarios.
-- [ ] Implement full polygon mesh voxelization/discretization to FASTM grid (current `voxelize_mesh` is a placeholder).
+- [x] Implement full polygon mesh voxelization/discretization to FDTD/voxel grid (was: current `voxelize_mesh` is a placeholder). Enhanced `mesh_utils.voxelize_mesh` with watertightness checks, hole filling, and explicit interior fill.
 - [ ] Implement or enhance support for mesh simplification.
 
 ## Organ Properties

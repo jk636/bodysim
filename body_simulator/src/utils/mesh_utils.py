@@ -26,21 +26,34 @@ def voxelize_mesh(mesh: trimesh.Trimesh, pitch: float = 1.0) -> Optional[np.ndar
         print(f"[ERROR] Invalid pitch value for voxelization: {pitch}. Must be a positive number.")
         return None
 
+    # Watertightness check and repair
+    original_watertight_status = mesh.is_watertight
+    print(f"[INFO] Original mesh watertight status: {original_watertight_status}")
+    if not original_watertight_status:
+        print("[INFO] Mesh is not watertight. Attempting to fill holes...")
+        mesh.fill_holes()
+        new_watertight_status = mesh.is_watertight
+        print(f"[INFO] Mesh watertight status after fill_holes(): {new_watertight_status}")
+        if not new_watertight_status:
+            print("[WARN] Mesh is still not watertight after attempting to fill holes. Voxelization might produce unexpected results.")
+
     print(f"[INFO] Starting voxelization for mesh with {len(mesh.vertices)} vertices, pitch={pitch}...")
     try:
         # mesh.voxelized(pitch) creates a VoxelGrid object.
-        # .matrix accesses the boolean numpy array representation.
-        voxel_grid_matrix = mesh.voxelized(pitch).matrix.astype(bool)
+        voxel_grid_object = mesh.voxelized(pitch)
 
-        if voxel_grid_matrix.ndim != 3 or voxel_grid_matrix.size == 0:
-            print(f"[WARN] Voxelization resulted in an empty or non-3D grid. Shape: {voxel_grid_matrix.shape}")
+        # Explicitly fill the interior of the voxel grid
+        print("[INFO] Ensuring voxel grid interior is filled using .fill()...")
+        filled_voxel_matrix = voxel_grid_object.fill().matrix.astype(bool)
+
+        if filled_voxel_matrix.ndim != 3 or filled_voxel_matrix.size == 0:
+            print(f"[WARN] Voxelization resulted in an empty or non-3D grid. Shape: {filled_voxel_matrix.shape}")
             # Depending on requirements, this might be an error or an expected outcome for certain meshes/pitches.
-            # For now, returning it as is, but could return None if an empty grid is considered an error.
 
-        print(f"[INFO] Voxelization successful. Grid shape: {voxel_grid_matrix.shape}")
-        return voxel_grid_matrix
-    except AttributeError as e: # e.g. if mesh is not a Trimesh object due to an earlier error
-        print(f"[ERROR] Voxelization failed due to attribute error (possibly invalid mesh object): {str(e)}")
+        print(f"[INFO] Voxelization successful. Grid shape: {filled_voxel_matrix.shape}")
+        return filled_voxel_matrix
+    except AttributeError as e: # e.g. if mesh is not a Trimesh object due to an earlier error or trimesh version issue
+        print(f"[ERROR] Voxelization failed due to attribute error (possibly invalid mesh object or trimesh method): {str(e)}")
         return None
     except Exception as e: # Catch other potential trimesh or numpy errors
         print(f"[ERROR] An unexpected error occurred during voxelization: {str(e)}")
