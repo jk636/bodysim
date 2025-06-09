@@ -3,7 +3,7 @@
 ## Mesh Handling
 - [ ] Implement robust polygon mesh loading (OBJ/STL) for all organ scenarios.
 - [x] Implement full polygon mesh voxelization/discretization to FDTD/voxel grid (was: current `voxelize_mesh` is a placeholder). Enhanced `mesh_utils.voxelize_mesh` with watertightness checks, hole filling, and explicit interior fill.
-- [ ] Implement or enhance support for mesh simplification.
+- [x] Implement or enhance support for mesh simplification. (Added `Organ.simplify_mesh(target_face_count)` method using `trimesh.simplify_quadric_decimation`)
 
 ## Organ Properties
 - [ ] Collect literature values for EM and mechanical properties for all relevant organs.

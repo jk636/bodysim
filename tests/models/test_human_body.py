@@ -9,7 +9,7 @@ import numpy as np
 # or pytest can find it (e.g. by running pytest from project root)
 from body_simulator.src.models.human_body import Organ, HumanBody
 # We will also need to mock trimesh, so no direct import of it here in tests unless for type hinting
-# import trimesh
+import trimesh # For spec=trimesh.Trimesh
 
 class TestOrgan(unittest.TestCase):
 
@@ -174,6 +174,127 @@ class TestOrgan(unittest.TestCase):
         self.assertEqual(new_organ.sub_organs["Ventricle"].name, sub_organ.name)
         self.assertEqual(new_organ.sub_organs["Ventricle"].mesh_file, sub_organ.mesh_file)
         self.assertEqual(new_organ.sub_organs["Ventricle"].density, sub_organ.density)
+
+    # --- Tests for simplify_mesh ---
+
+    def test_simplify_mesh_success(self):
+        organ = Organ(name="TestOrgan")
+        organ.mesh = MagicMock(spec=trimesh.Trimesh)
+        organ.mesh.is_empty = False
+        organ.mesh.faces = [([0,0,0])] * 100 # Simulate 100 faces
+
+        mock_simplified_mesh = MagicMock(spec=trimesh.Trimesh)
+        mock_simplified_mesh.is_empty = False
+        mock_simplified_mesh.faces = [([0,0,0])] * 50 # Simulate 50 faces
+        organ.mesh.simplify_quadric_decimation.return_value = mock_simplified_mesh
+
+        result = organ.simplify_mesh(target_face_count=50)
+
+        self.assertTrue(result)
+        organ.mesh.simplify_quadric_decimation.assert_called_once_with(face_count=50)
+        self.assertIs(organ.mesh, mock_simplified_mesh)
+
+    def test_simplify_mesh_no_mesh(self):
+        organ = Organ(name="TestOrganNoMesh")
+        # organ.mesh is None by default
+        result = organ.simplify_mesh(target_face_count=50)
+        self.assertFalse(result)
+
+    def test_simplify_mesh_mesh_is_empty(self):
+        organ = Organ(name="TestOrganEmptyMesh")
+        organ.mesh = MagicMock(spec=trimesh.Trimesh)
+        organ.mesh.is_empty = True
+
+        result = organ.simplify_mesh(target_face_count=50)
+        self.assertFalse(result)
+        organ.mesh.simplify_quadric_decimation.assert_not_called()
+
+    def test_simplify_mesh_invalid_target_face_count(self):
+        organ = Organ(name="TestOrganInvalidTarget")
+        organ.mesh = MagicMock(spec=trimesh.Trimesh)
+        organ.mesh.is_empty = False
+        organ.mesh.faces = [([0,0,0])] * 100
+
+        # Store original mock simplify_quadric_decimation to check it's not called
+        simplify_mock = organ.mesh.simplify_quadric_decimation
+
+        result_zero = organ.simplify_mesh(target_face_count=0)
+        self.assertFalse(result_zero)
+
+        result_negative = organ.simplify_mesh(target_face_count=-10)
+        self.assertFalse(result_negative)
+
+        result_string = organ.simplify_mesh(target_face_count='abc')
+        self.assertFalse(result_string)
+
+        simplify_mock.assert_not_called()
+
+    def test_simplify_mesh_target_gte_current_faces(self):
+        organ = Organ(name="TestOrganNoSimplifyNeeded")
+        organ.mesh = MagicMock(spec=trimesh.Trimesh)
+        organ.mesh.is_empty = False
+        organ.mesh.faces = [([0,0,0])] * 100
+        original_mesh = organ.mesh
+
+        simplify_mock = organ.mesh.simplify_quadric_decimation
+
+        result_equal = organ.simplify_mesh(target_face_count=100)
+        self.assertTrue(result_equal)
+
+        result_greater = organ.simplify_mesh(target_face_count=150)
+        self.assertTrue(result_greater)
+
+        simplify_mock.assert_not_called()
+        self.assertIs(organ.mesh, original_mesh) # Mesh should not have changed
+
+    def test_simplify_mesh_results_in_empty_mesh(self):
+        organ = Organ(name="TestOrganSimplifyToEmpty")
+        organ.mesh = MagicMock(spec=trimesh.Trimesh)
+        organ.mesh.is_empty = False
+        organ.mesh.faces = [([0,0,0])] * 100
+        original_mesh = organ.mesh
+
+        mock_empty_simplified_mesh = MagicMock(spec=trimesh.Trimesh)
+        mock_empty_simplified_mesh.is_empty = True
+        # simulate that simplification results in 0 faces, which might make it empty
+        mock_empty_simplified_mesh.faces = []
+        organ.mesh.simplify_quadric_decimation.return_value = mock_empty_simplified_mesh
+
+        result = organ.simplify_mesh(target_face_count=10)
+
+        self.assertFalse(result)
+        organ.mesh.simplify_quadric_decimation.assert_called_once_with(face_count=10)
+        self.assertIs(organ.mesh, original_mesh) # Mesh should revert or stay as original
+
+    def test_simplify_mesh_results_in_none_mesh(self): # Explicitly test for None return
+        organ = Organ(name="TestOrganSimplifyToNone")
+        organ.mesh = MagicMock(spec=trimesh.Trimesh)
+        organ.mesh.is_empty = False
+        organ.mesh.faces = [([0,0,0])] * 100
+        original_mesh = organ.mesh
+
+        organ.mesh.simplify_quadric_decimation.return_value = None # Simplification returns None
+
+        result = organ.simplify_mesh(target_face_count=10)
+
+        self.assertFalse(result)
+        organ.mesh.simplify_quadric_decimation.assert_called_once_with(face_count=10)
+        self.assertIs(organ.mesh, original_mesh)
+
+    def test_simplify_mesh_trimesh_exception(self):
+        organ = Organ(name="TestOrganSimplifyException")
+        organ.mesh = MagicMock(spec=trimesh.Trimesh)
+        organ.mesh.is_empty = False
+        organ.mesh.faces = [([0,0,0])] * 100
+        original_mesh = organ.mesh
+
+        organ.mesh.simplify_quadric_decimation.side_effect = Exception("Trimesh simplify error")
+
+        result = organ.simplify_mesh(target_face_count=50)
+
+        self.assertFalse(result)
+        organ.mesh.simplify_quadric_decimation.assert_called_once_with(face_count=50)
+        self.assertIs(organ.mesh, original_mesh)
 
 
 class TestHumanBody(unittest.TestCase):

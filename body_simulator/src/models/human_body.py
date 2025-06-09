@@ -82,6 +82,42 @@ class Organ:
             print(f"[ERROR] Exception during voxelization for {self.name}: {str(e)}")
             self.voxel_grid = None
 
+    def simplify_mesh(self, target_face_count: int) -> bool:
+        # Ensure self.mesh exists and is a trimesh.Trimesh object
+        if not isinstance(self.mesh, trimesh.Trimesh) or self.mesh.is_empty:
+            print(f"[WARN] Organ {self.name}: No valid mesh to simplify.")
+            return False
+
+        # Validate target_face_count
+        if not isinstance(target_face_count, int) or target_face_count <= 0:
+            print(f"[ERROR] Organ {self.name}: target_face_count must be a positive integer. Got {target_face_count}.")
+            return False
+
+        original_face_count = len(self.mesh.faces)
+        print(f"[INFO] Organ {self.name}: Attempting to simplify mesh from {original_face_count} faces to {target_face_count} faces.")
+
+        # If target is same or more than current, no simplification needed
+        if target_face_count >= original_face_count:
+            print(f"[INFO] Organ {self.name}: Target face count ({target_face_count}) is >= current face count ({original_face_count}). No simplification performed.")
+            return True
+
+        try:
+            # trimesh.Trimesh.simplify_quadric_decimation returns a new mesh
+            simplified_mesh = self.mesh.simplify_quadric_decimation(face_count=target_face_count)
+
+            if simplified_mesh is None or simplified_mesh.is_empty: # Check if simplification failed or resulted in empty
+                print(f"[WARN] Organ {self.name}: Simplification to {target_face_count} faces resulted in an empty or None mesh. Original mesh retained.")
+                return False # Simplification technically failed to produce a valid result
+
+            self.mesh = simplified_mesh # Update the organ's mesh
+            new_face_count = len(self.mesh.faces) # Should be close to target_face_count
+            print(f"[INFO] Organ {self.name}: Mesh simplified successfully. New face count: {new_face_count} (Target was {target_face_count}).")
+            return True
+        except Exception as e:
+            # Log the error, self.mesh remains the original mesh
+            print(f"[ERROR] Organ {self.name}: Error during mesh simplification using trimesh: {str(e)}")
+            return False
+
     def interpolate_properties(self, point_xyz: Optional[Any] = None) -> Dict[str, float]:
         """
         Returns the global physical properties of the organ.
