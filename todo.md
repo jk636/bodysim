@@ -17,10 +17,10 @@
 - [ ] Support export of model/grid data to formats readable by common physics simulation tools.
 
 ## Flask App Enhancements
-- [ ] Integrate voxelization into Flask app with live previews:
-    - [ ] Implement `encode_image_to_png()` helper (if not already present for snapshots).
-    - [ ] Add UI controls (e.g., slider/input) to select voxel pitch/resolution.
-    - [ ] Display a live preview PNG (or similar) of the voxel grid projection after voxelization.
+- [x] Integrate voxelization into Flask app with live previews:
+    - [x] Implement `encode_image_to_png()` helper (confirmed present and used for snapshots/previews).
+    - [x] Add UI controls (e.g., slider/input) to select voxel pitch/resolution (existing input used, dynamic updates implemented).
+    - [x] Display a live preview PNG (or similar) of the voxel grid projection after voxelization (implemented via dynamic updates on upload and pitch change).
 
 ## DICOM Pipeline
 - [ ] Implement a functional DICOM-to-mesh conversion pipeline (current one is a basic skeleton/stub). This includes robust volume segmentation from DICOM slices.
