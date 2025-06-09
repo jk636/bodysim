@@ -1,7 +1,7 @@
 # Actionable TODOs
 
 ## Mesh Handling
-- [ ] Implement robust polygon mesh loading (OBJ/STL) for all organ scenarios.
+- [x] Implement robust polygon mesh loading (OBJ/STL) for all organ scenarios. (Enhanced `Organ.load_mesh()` to handle `trimesh.Scene` objects by concatenation, automatically call `mesh.process()` after loading, and improved logging.)
 - [x] Implement full polygon mesh voxelization/discretization to FDTD/voxel grid (was: current `voxelize_mesh` is a placeholder). Enhanced `mesh_utils.voxelize_mesh` with watertightness checks, hole filling, and explicit interior fill.
 - [x] Implement or enhance support for mesh simplification. (Added `Organ.simplify_mesh(target_face_count)` method using `trimesh.simplify_quadric_decimation`)
 

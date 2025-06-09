@@ -27,9 +27,17 @@ class TestOrgan(unittest.TestCase):
     def test_load_mesh_success(self, mock_trimesh_load, mock_isfile):
         mock_isfile.return_value = True # Simulate file exists
 
-        dummy_mesh = MagicMock(spec=trimesh.Trimesh) # Create a MagicMock that acts like a Trimesh object
+        dummy_mesh = MagicMock(spec=trimesh.Trimesh, name="loaded_mesh")
         dummy_mesh.is_empty = False
-        dummy_mesh.vertices = [1,2,3] # Give it some dummy vertices to make it not "empty" in a general sense
+        dummy_mesh.vertices = [1,2,3]
+        dummy_mesh.faces = [[0,1,2]] # Add faces for len() checks in method
+
+        mock_processed_mesh = MagicMock(spec=trimesh.Trimesh, name="processed_mesh")
+        mock_processed_mesh.is_empty = False
+        mock_processed_mesh.vertices = [4,5,6]
+        mock_processed_mesh.faces = [[0,1,2]]
+        dummy_mesh.process.return_value = mock_processed_mesh
+
         mock_trimesh_load.return_value = dummy_mesh
 
         organ = Organ(name="Liver")
@@ -38,16 +46,21 @@ class TestOrgan(unittest.TestCase):
 
         mock_isfile.assert_called_once_with(mesh_path)
         mock_trimesh_load.assert_called_once_with(mesh_path)
+        dummy_mesh.process.assert_called_once()
         self.assertEqual(organ.mesh_file, mesh_path)
         self.assertIsNotNone(organ.mesh)
-        self.assertEqual(organ.mesh, dummy_mesh)
+        self.assertIs(organ.mesh, mock_processed_mesh) # Should be the processed mesh
 
     @patch('os.path.isfile')
     def test_load_mesh_file_not_found(self, mock_isfile):
         mock_isfile.return_value = False # Simulate file does NOT exist
         organ = Organ(name="Kidney")
         mesh_path = "nonexistent/kidney.obj"
-        organ.load_mesh(mesh_path)
+
+        # Mock trimesh.load to ensure it's not called if file not found
+        with patch('trimesh.load') as mock_trimesh_load_local:
+            organ.load_mesh(mesh_path)
+            mock_trimesh_load_local.assert_not_called()
 
         mock_isfile.assert_called_once_with(mesh_path)
         self.assertIsNone(organ.mesh)
@@ -55,11 +68,12 @@ class TestOrgan(unittest.TestCase):
 
     @patch('os.path.isfile')
     @patch('trimesh.load')
-    def test_load_mesh_empty_mesh(self, mock_trimesh_load, mock_isfile):
+    def test_load_mesh_empty_mesh_loaded(self, mock_trimesh_load, mock_isfile):
         mock_isfile.return_value = True
 
-        empty_mesh = MagicMock(spec=trimesh.Trimesh)
+        empty_mesh = MagicMock(spec=trimesh.Trimesh, name="loaded_empty_mesh")
         empty_mesh.is_empty = True
+        empty_mesh.process = MagicMock(name="process_on_empty_mesh") # Mock process method
         mock_trimesh_load.return_value = empty_mesh
 
         organ = Organ(name="Spleen")
@@ -67,17 +81,129 @@ class TestOrgan(unittest.TestCase):
         organ.load_mesh(mesh_path)
 
         self.assertIsNone(organ.mesh, "Mesh should be None if trimesh loads an empty mesh.")
+        empty_mesh.process.assert_not_called() # Process should not be called on an empty mesh
 
     @patch('os.path.isfile')
     @patch('trimesh.load')
-    def test_load_mesh_trimesh_exception(self, mock_trimesh_load, mock_isfile):
+    def test_load_mesh_trimesh_load_exception(self, mock_trimesh_load, mock_isfile):
         mock_isfile.return_value = True
         mock_trimesh_load.side_effect = Exception("Trimesh load error")
 
         organ = Organ(name="Pancreas")
         mesh_path = "dummy/pancreas.obj"
+
+        # To check .process() is not called, we'd need a mesh object, but load fails.
+        # So, this test primarily ensures mesh is None after such an exception.
         organ.load_mesh(mesh_path)
         self.assertIsNone(organ.mesh)
+
+    @patch('os.path.isfile')
+    @patch('trimesh.load')
+    def test_load_mesh_handles_scene_successfully(self, mock_trimesh_load, mock_isfile):
+        mock_isfile.return_value = True
+
+        mock_scene = MagicMock(spec=trimesh.Scene, name="scene_mock")
+        mock_trimesh_geom = MagicMock(spec=trimesh.Trimesh, name="trimesh_in_scene", is_empty=False, vertices=[1], faces=[[0,0,0]])
+        mock_scene.geometry = {'geom1': mock_trimesh_geom}
+
+        mock_concatenated_mesh = MagicMock(spec=trimesh.Trimesh, name="concatenated_mesh", is_empty=False, vertices=[2], faces=[[0,0,0]])
+        mock_scene.dump.return_value = mock_concatenated_mesh
+
+        mock_processed_concat_mesh = MagicMock(spec=trimesh.Trimesh, name="processed_concatenated_mesh", is_empty=False, vertices=[3], faces=[[0,0,0]])
+        mock_concatenated_mesh.process.return_value = mock_processed_concat_mesh
+
+        mock_trimesh_load.return_value = mock_scene
+
+        organ = Organ(name="SceneOrgan")
+        organ.load_mesh("dummy_scene.glb")
+
+        mock_scene.dump.assert_called_once_with(concatenate=True)
+        mock_concatenated_mesh.process.assert_called_once()
+        self.assertIs(organ.mesh, mock_processed_concat_mesh)
+
+    @patch('os.path.isfile')
+    @patch('trimesh.load')
+    def test_load_mesh_handles_empty_scene(self, mock_trimesh_load, mock_isfile):
+        mock_isfile.return_value = True
+
+        mock_empty_scene = MagicMock(spec=trimesh.Scene, name="empty_scene_mock")
+        mock_empty_scene.geometry = {} # Empty geometry dict
+        mock_empty_scene.dump = MagicMock(name="dump_on_empty_scene") # Mock dump
+
+        mock_trimesh_load.return_value = mock_empty_scene
+
+        organ = Organ(name="EmptySceneOrgan")
+        organ.load_mesh("empty_scene.glb")
+
+        self.assertIsNone(organ.mesh)
+        mock_empty_scene.dump.assert_not_called() # Dump should not be called if geometry is empty
+
+    @patch('os.path.isfile')
+    @patch('trimesh.load')
+    def test_load_mesh_scene_consolidation_fails_returns_non_trimesh(self, mock_trimesh_load, mock_isfile):
+        mock_isfile.return_value = True
+
+        mock_scene = MagicMock(spec=trimesh.Scene, name="scene_mock_fail_dump")
+        mock_scene.geometry = {'geom1': MagicMock(spec=trimesh.Trimesh)} # Non-empty geometry
+        mock_scene.dump.return_value = "not_a_trimesh_object" # Simulate dump returning wrong type
+
+        mock_trimesh_load.return_value = mock_scene
+
+        organ = Organ(name="SceneFailDumpOrgan")
+        organ.load_mesh("scene_fail_dump.glb")
+
+        self.assertIsNone(organ.mesh)
+        mock_scene.dump.assert_called_once_with(concatenate=True)
+
+    @patch('os.path.isfile')
+    @patch('trimesh.load')
+    def test_load_mesh_scene_consolidation_exception(self, mock_trimesh_load, mock_isfile):
+        mock_isfile.return_value = True
+
+        mock_scene = MagicMock(spec=trimesh.Scene, name="scene_mock_exc_dump")
+        mock_scene.geometry = {'geom1': MagicMock(spec=trimesh.Trimesh)} # Non-empty geometry
+        mock_scene.dump.side_effect = Exception("Scene dump error")
+
+        mock_trimesh_load.return_value = mock_scene
+
+        organ = Organ(name="SceneExcDumpOrgan")
+        organ.load_mesh("scene_exc_dump.glb")
+
+        self.assertIsNone(organ.mesh)
+        mock_scene.dump.assert_called_once_with(concatenate=True)
+
+    @patch('os.path.isfile')
+    @patch('trimesh.load')
+    def test_load_mesh_processing_fails_returns_empty(self, mock_trimesh_load, mock_isfile):
+        mock_isfile.return_value = True
+
+        mock_loaded_mesh = MagicMock(spec=trimesh.Trimesh, name="loaded_mesh_for_proc_fail", is_empty=False, vertices=[1], faces=[[0,0,0]])
+        mock_empty_processed_mesh = MagicMock(spec=trimesh.Trimesh, name="empty_processed_mesh", is_empty=True, faces=[]) # is_empty makes it fail
+        mock_loaded_mesh.process.return_value = mock_empty_processed_mesh
+
+        mock_trimesh_load.return_value = mock_loaded_mesh
+
+        organ = Organ(name="ProcessFailOrgan")
+        organ.load_mesh("process_fail.obj")
+
+        self.assertIsNone(organ.mesh)
+        mock_loaded_mesh.process.assert_called_once()
+
+    @patch('os.path.isfile')
+    @patch('trimesh.load')
+    def test_load_mesh_processing_fails_returns_non_trimesh(self, mock_trimesh_load, mock_isfile):
+        mock_isfile.return_value = True
+
+        mock_loaded_mesh = MagicMock(spec=trimesh.Trimesh, name="loaded_mesh_for_proc_fail_type", is_empty=False, vertices=[1], faces=[[0,0,0]])
+        mock_loaded_mesh.process.return_value = "not_a_trimesh_object_after_process" # process returns wrong type
+
+        mock_trimesh_load.return_value = mock_loaded_mesh
+
+        organ = Organ(name="ProcessFailTypeOrgan")
+        organ.load_mesh("process_fail_type.obj")
+
+        self.assertIsNone(organ.mesh)
+        mock_loaded_mesh.process.assert_called_once()
 
 
     def test_set_properties(self):

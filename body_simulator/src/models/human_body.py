@@ -34,23 +34,64 @@ class Organ:
             self.load_mesh(mesh_file)
 
     def load_mesh(self, mesh_file: str):
-        self.mesh_file = mesh_file # Store/update the mesh file path
+        self.mesh_file = mesh_file  # Store/update the mesh file path
+        self.mesh = None # Initialize mesh to None
+
         if not os.path.isfile(mesh_file):
-            print(f"[ERROR] Mesh file not found: {mesh_file} for organ {self.name}")
-            self.mesh = None # Ensure mesh is None if file not found
+            print(f"[ERROR] Organ {self.name}: Mesh file not found: {mesh_file}")
             return
+
         try:
-            # Attempt to load the mesh, trimesh handles various exceptions.
             mesh_candidate = trimesh.load(mesh_file)
-            if mesh_candidate.is_empty:
-                print(f"[ERROR] Mesh loaded but empty: {mesh_file} for organ {self.name}")
-                self.mesh = None
-            else:
-                self.mesh = mesh_candidate
-                print(f"[INFO] Successfully loaded mesh for {self.name} from {mesh_file}")
-        except Exception as e: # Catching generic trimesh load errors
-            print(f"[ERROR] Exception loading mesh {mesh_file} for organ {self.name}: {str(e)}")
-            self.mesh = None
+
+            # Handle trimesh.Scene by attempting to consolidate it
+            if isinstance(mesh_candidate, trimesh.Scene):
+                print(f"[INFO] Organ {self.name}: Loaded a trimesh.Scene from {mesh_file}.")
+                if not mesh_candidate.geometry: # Check if scene has any geometries
+                    print(f"[ERROR] Organ {self.name}: Scene from {mesh_file} contains no geometries. No mesh loaded.")
+                    return
+                try:
+                    # Consolidate all geometries in the scene into a single Trimesh object
+                    mesh_candidate = mesh_candidate.dump(concatenate=True)
+                    if not isinstance(mesh_candidate, trimesh.Trimesh):
+                        # This case might happen if dump results in an empty scene or some other non-Trimesh object
+                        print(f"[ERROR] Organ {self.name}: Failed to consolidate scene from {mesh_file} into a single Trimesh object. Result type: {type(mesh_candidate)}.")
+                        return
+                    print(f"[INFO] Organ {self.name}: Scene consolidated into a single mesh.")
+                except Exception as e_scene:
+                    print(f"[ERROR] Organ {self.name}: Error consolidating scene from {mesh_file}: {str(e_scene)}")
+                    return
+
+            # Check if the loaded or consolidated mesh_candidate is a valid Trimesh and not empty
+            if not isinstance(mesh_candidate, trimesh.Trimesh) or mesh_candidate.is_empty:
+                is_empty_val = getattr(mesh_candidate, 'is_empty', 'N/A (not a Trimesh object or no is_empty attr)')
+                if isinstance(mesh_candidate, trimesh.Trimesh): # If it's Trimesh, is_empty is reliable
+                    is_empty_val = mesh_candidate.is_empty
+                print(f"[ERROR] Organ {self.name}: Loaded content from {mesh_file} is not a valid non-empty mesh (Type: {type(mesh_candidate)}, Empty: {is_empty_val}). No mesh loaded.")
+                return
+
+            # Process the mesh (e.g., to ensure manifold, fix normals, etc.)
+            # trimesh.process() returns a new mesh object
+            print(f"[INFO] Organ {self.name}: Attempting to process mesh (original from {mesh_file})...")
+            processed_mesh = mesh_candidate.process()
+
+            if not isinstance(processed_mesh, trimesh.Trimesh) or processed_mesh.is_empty:
+                # Log details of the original mesh_candidate if processing fails to produce a valid mesh
+                orig_type = type(mesh_candidate)
+                orig_empty = mesh_candidate.is_empty if isinstance(mesh_candidate, trimesh.Trimesh) else 'N/A'
+                orig_verts = len(mesh_candidate.vertices) if hasattr(mesh_candidate, 'vertices') else 'N/A'
+                orig_faces = len(mesh_candidate.faces) if hasattr(mesh_candidate, 'faces') else 'N/A'
+                print(f"[WARN] Organ {self.name}: Processing mesh from {mesh_file} resulted in an invalid or empty mesh. Original (pre-process) mesh was (Type: {orig_type}, Empty: {orig_empty}, Vertices: {orig_verts}, Faces: {orig_faces}). Setting mesh to None as processed version is unusable.")
+                return # self.mesh remains None as initialized or set previously
+
+            self.mesh = processed_mesh
+            print(f"[INFO] Organ {self.name}: Successfully loaded and processed mesh from {mesh_file}.")
+            print(f"[INFO] Organ {self.name}: Mesh details: Vertices={len(self.mesh.vertices)}, Faces={len(self.mesh.faces)}, Watertight={self.mesh.is_watertight}")
+
+        except Exception as e:
+            # Catch any other exceptions during loading or initial processing
+            print(f"[ERROR] Organ {self.name}: Exception loading/processing mesh {mesh_file}: {str(e)}")
+            self.mesh = None # Ensure mesh is None on any error during this process
 
     def add_sub_organ(self, sub_organ: 'Organ'):
         self.sub_organs[sub_organ.name] = sub_organ
