@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Body Simulator Interface</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        h1, h2 { color: #333; border-bottom: 1px solid #ccc; padding-bottom: 10px;}
+        .container { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="file"], input[type="text"], input[type="number"] { margin-bottom:10px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; width: calc(100% - 22px); }
+        button { padding: 10px 15px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #0056b3; }
+        .result-div { margin-top: 15px; padding: 10px; border: 1px solid #eee; border-radius: 4px; background-color: #fff; word-wrap: break-word; }
+        img { margin-top:10px; max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; }
+        hr { margin-top: 30px; margin-bottom: 30px; border: 0; border-top: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <h1>Body Simulator Interface</h1>
+
+    <!-- OBJ Mesh Upload Section -->
+    <div class="container">
+        <h2>1. Upload OBJ Mesh</h2>
+        <form id="objUploadForm">
+            <label for="objFile">Select .obj file:</label>
+            <input type="file" id="objFile" name="mesh" accept=".obj" required>
+            <button type="submit">Upload and Visualize OBJ</button>
+        </form>
+        <div id="objResult" class="result-div"></div>
+        <div id="objImage"></div>
+        <div id="objInteractiveLinkContainer" style="margin-top: 10px;"></div>
+    </div>
+
+    <hr>
+
+    <!-- DICOM Upload Section -->
+    <div class="container">
+        <h2>2. Upload DICOM Series</h2>
+        <form id="dicomUploadForm">
+            <label for="dicomFiles">Select DICOM files (multiple):</label>
+            <input type="file" id="dicomFiles" name="dicom_files" webkitdirectory directory multiple required>
+            <button type="submit">Upload DICOM and Generate Mesh</button>
+        </form>
+        <div id="dicomResult" class="result-div"></div>
+        <div id="dicomMeshImage"></div>
+    </div>
+
+    <hr>
+
+    <!-- Voxelization Section -->
+    <div class="container">
+        <h2>3. Voxelize Mesh</h2>
+        <form id="voxelizeForm">
+            <label for="meshFilename">Mesh Filename (e.g., from upload response):</label>
+            <input type="text" id="meshFilename" name="filename" placeholder="e.g., my_mesh.obj" required>
+
+            <label for="voxelPitch">Voxel Pitch:</label>
+            <input type="number" id="voxelPitch" name="pitch" value="1.0" step="0.1" required>
+
+            <button type="submit">Voxelize and Preview Projection</button>
+        </form>
+        <div id="voxelizeResult" class="result-div"></div>
+        <div id="voxelImage"></div>
+    </div>
+
+<script>
+    // --- OBJ Upload Logic ---
+    const objUploadForm = document.getElementById('objUploadForm');
+    const objResultDiv = document.getElementById('objResult');
+    const objImageDiv = document.getElementById('objImage');
+    const objInteractiveLinkContainer = document.getElementById('objInteractiveLinkContainer');
+    let lastUploadedObjFilename = ''; // Store filename for voxelization
+
+    objUploadForm.onsubmit = async (e) => {
+        e.preventDefault();
+        objResultDiv.textContent = 'Uploading OBJ and processing...';
+        objImageDiv.innerHTML = '';
+
+        const formData = new FormData(objUploadForm);
+
+        try {
+            const uploadResponse = await fetch('/mesh/upload_obj', {
+                method: 'POST',
+                body: formData
+            });
+            const uploadResult = await uploadResponse.json();
+
+            if (uploadResponse.ok) {
+                objResultDiv.textContent = uploadResult.message || 'Success';
+                lastUploadedObjFilename = uploadResult.filename;
+                objInteractiveLinkContainer.innerHTML = ''; // Clear previous link
+
+                if (lastUploadedObjFilename) {
+                    document.getElementById('meshFilename').value = lastUploadedObjFilename;
+
+                    // Display static visualization
+                    const staticVizUrl = `/mesh/visualize_uploaded_obj?filename=${encodeURIComponent(lastUploadedObjFilename)}&t=${new Date().getTime()}`;
+                    const imageResponse = await fetch(staticVizUrl);
+                    if (imageResponse.ok) {
+                        const blob = await imageResponse.blob();
+                        objImageDiv.innerHTML = `<img src="${URL.createObjectURL(blob)}" alt="OBJ Mesh Static Visualization" />`;
+                    } else {
+                        const errorVizText = await imageResponse.text();
+                        objImageDiv.textContent = `Error loading static OBJ visualization: ${imageResponse.status} ${imageResponse.statusText}. ${errorVizText}`;
+                    }
+
+                    // Add link/button for interactive Three.js view
+                    const interactiveViewUrl = `visualize_mesh.html?modelUrl=${encodeURIComponent('/mesh/get_model/' + lastUploadedObjFilename)}`;
+                    const link = document.createElement('a');
+                    link.href = interactiveViewUrl;
+                    link.textContent = 'Show 3D Interactive View';
+                    link.target = '_blank'; // Open in new window/tab
+                    link.style.display = 'inline-block';
+                    link.style.marginTop = '10px';
+                    link.style.padding = '10px 15px';
+                    link.style.backgroundColor = '#28a745';
+                    link.style.color = 'white';
+                    link.style.textDecoration = 'none';
+                    link.style.borderRadius = '4px';
+                    objInteractiveLinkContainer.appendChild(link);
+
+                }
+            } else {
+                objResultDiv.textContent = `OBJ Upload error: ${uploadResult.error || uploadResponse.statusText}`;
+            }
+        } catch (error) {
+            console.error('Error during OBJ upload or visualization fetch:', error);
+            objResultDiv.textContent = `An unexpected error occurred with OBJ: ${error.message}`;
+        }
+    };
+
+    // --- DICOM Upload Logic ---
+    const dicomUploadForm = document.getElementById('dicomUploadForm');
+    const dicomResultDiv = document.getElementById('dicomResult');
+    const dicomMeshImageDiv = document.getElementById('dicomMeshImage');
+
+    dicomUploadForm.onsubmit = async (e) => {
+        e.preventDefault();
+        dicomResultDiv.textContent = 'Uploading DICOM series and generating mesh...';
+        dicomMeshImageDiv.innerHTML = '';
+
+        const formData = new FormData(dicomUploadForm);
+
+        try {
+            const uploadResponse = await fetch('/mesh/upload_dicom', {
+                method: 'POST',
+                body: formData
+            });
+            const uploadResult = await uploadResponse.json();
+
+            if (uploadResponse.ok) {
+                dicomResultDiv.textContent = uploadResult.message || 'DICOM processed successfully.';
+                const dicomGeneratedMeshFilename = uploadResult.filename;
+                if (dicomGeneratedMeshFilename) {
+                    lastUploadedObjFilename = dicomGeneratedMeshFilename;
+                    document.getElementById('meshFilename').value = dicomGeneratedMeshFilename;
+
+                    // Display static visualization of the DICOM-generated mesh
+                    const staticVizUrl = `/mesh/visualize_uploaded_obj?filename=${encodeURIComponent(dicomGeneratedMeshFilename)}&t=${new Date().getTime()}`;
+                    const imageResponse = await fetch(staticVizUrl);
+                    if (imageResponse.ok) {
+                        const blob = await imageResponse.blob();
+                        dicomMeshImageDiv.innerHTML = `<img src="${URL.createObjectURL(blob)}" alt="DICOM-Generated Mesh Static Visualization" />`;
+
+                        // Add link for interactive view of DICOM-generated mesh
+                        const interactiveViewUrl = `visualize_mesh.html?modelUrl=${encodeURIComponent('/mesh/get_model/' + dicomGeneratedMeshFilename)}`;
+                        const link = document.createElement('a');
+                        link.href = interactiveViewUrl;
+                        link.textContent = 'Show 3D Interactive View (DICOM Mesh)';
+                        link.target = '_blank';
+                        link.style.display = 'inline-block';
+                        link.style.marginTop = '10px';
+                        link.style.padding = '10px 15px';
+                        link.style.backgroundColor = '#28a745';
+                        link.style.color = 'white';
+                        link.style.textDecoration = 'none';
+                        link.style.borderRadius = '4px';
+                        // Insert link after the dicomResultDiv or dicomMeshImageDiv
+                        dicomMeshImageDiv.parentNode.insertBefore(link, dicomMeshImageDiv.nextSibling);
+
+                    } else {
+                        const errorVizText = await imageResponse.text();
+                        dicomMeshImageDiv.textContent = `Error loading DICOM mesh static visualization: ${imageResponse.status} ${imageResponse.statusText}. ${errorVizText}`;
+                    }
+                }
+            } else {
+                dicomResultDiv.textContent = `DICOM Upload error: ${uploadResult.error || uploadResponse.statusText}`;
+            }
+        } catch (error) {
+            console.error('Error during DICOM upload or mesh generation:', error);
+            dicomResultDiv.textContent = `An unexpected error occurred with DICOM processing: ${error.message}`;
+        }
+    };
+
+    // --- Voxelization Logic ---
+    const voxelizeForm = document.getElementById('voxelizeForm');
+    const voxelizeResultDiv = document.getElementById('voxelizeResult');
+    const voxelImageDiv = document.getElementById('voxelImage');
+
+    voxelizeForm.onsubmit = async (e) => {
+        e.preventDefault();
+        voxelizeResultDiv.textContent = 'Voxelizing mesh and generating preview...';
+        voxelImageDiv.innerHTML = '';
+
+        const filename = document.getElementById('meshFilename').value;
+        const pitch = document.getElementById('voxelPitch').value;
+
+        if (!filename) {
+            voxelizeResultDiv.textContent = 'Please provide a mesh filename (can be from OBJ or DICOM upload).';
+            return;
+        }
+
+        try {
+            const response = await fetch('/mesh/voxelize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename, pitch: parseFloat(pitch) })
+            });
+
+            if (response.ok) {
+                voxelizeResultDiv.textContent = `Voxelization requested for ${filename} with pitch ${pitch}. Displaying projection.`;
+                const blob = await response.blob(); // Expecting image/png
+                voxelImageDiv.innerHTML = `<img src="${URL.createObjectURL(blob)}" alt="Voxel Projection" />`;
+            } else {
+                const errorResult = await response.json();
+                voxelizeResultDiv.textContent = `Voxelization error: ${errorResult.error || response.statusText}`;
+            }
+        } catch (error) {
+            console.error('Error during voxelization:', error);
+            voxelizeResultDiv.textContent = `An unexpected error occurred during voxelization: ${error.message}`;
+        }
+    };
+</script>
+</body>
+</html>
