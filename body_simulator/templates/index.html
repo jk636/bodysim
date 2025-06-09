@@ -119,6 +119,8 @@
                     link.style.borderRadius = '4px';
                     objInteractiveLinkContainer.appendChild(link);
 
+                    // Automatically fetch and display voxel preview after successful OBJ upload
+                    fetchAndDisplayVoxelPreview(lastUploadedObjFilename, parseFloat(document.getElementById('voxelPitch').value));
                 }
             } else {
                 objResultDiv.textContent = `OBJ Upload error: ${uploadResult.error || uploadResponse.statusText}`;
@@ -178,6 +180,8 @@
                         // Insert link after the dicomResultDiv or dicomMeshImageDiv
                         dicomMeshImageDiv.parentNode.insertBefore(link, dicomMeshImageDiv.nextSibling);
 
+                        // Automatically fetch and display voxel preview after successful DICOM processing
+                        fetchAndDisplayVoxelPreview(dicomGeneratedMeshFilename, parseFloat(document.getElementById('voxelPitch').value));
                     } else {
                         const errorVizText = await imageResponse.text();
                         dicomMeshImageDiv.textContent = `Error loading DICOM mesh static visualization: ${imageResponse.status} ${imageResponse.statusText}. ${errorVizText}`;
@@ -196,40 +200,83 @@
     const voxelizeForm = document.getElementById('voxelizeForm');
     const voxelizeResultDiv = document.getElementById('voxelizeResult');
     const voxelImageDiv = document.getElementById('voxelImage');
+    const voxelPitchInput = document.getElementById('voxelPitch'); // Added for event listener
+    let debounceTimeout; // For pitch input debouncing
 
-    voxelizeForm.onsubmit = async (e) => {
-        e.preventDefault();
-        voxelizeResultDiv.textContent = 'Voxelizing mesh and generating preview...';
-        voxelImageDiv.innerHTML = '';
-
-        const filename = document.getElementById('meshFilename').value;
-        const pitch = document.getElementById('voxelPitch').value;
-
+    async function fetchAndDisplayVoxelPreview(filename, pitch) {
         if (!filename) {
-            voxelizeResultDiv.textContent = 'Please provide a mesh filename (can be from OBJ or DICOM upload).';
+            voxelizeResultDiv.textContent = 'Error: Mesh filename is missing for voxelization. Please upload or select a mesh.';
             return;
         }
+        if (isNaN(pitch) || pitch <= 0) {
+            voxelizeResultDiv.textContent = 'Error: Invalid pitch value. Must be a positive number.';
+            // Optionally, reset pitch input to a default or previous valid value
+            // document.getElementById('voxelPitch').value = 1.0; // Example reset
+            return;
+        }
+
+        voxelizeResultDiv.textContent = `Voxelizing ${filename} with pitch ${pitch}...`;
+        voxelImageDiv.innerHTML = ''; // Clear previous image
 
         try {
             const response = await fetch('/mesh/voxelize', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename: filename, pitch: parseFloat(pitch) })
+                body: JSON.stringify({ filename: filename, pitch: pitch })
             });
 
             if (response.ok) {
-                voxelizeResultDiv.textContent = `Voxelization requested for ${filename} with pitch ${pitch}. Displaying projection.`;
                 const blob = await response.blob(); // Expecting image/png
-                voxelImageDiv.innerHTML = `<img src="${URL.createObjectURL(blob)}" alt="Voxel Projection" />`;
+                if (blob.type === "image/png") {
+                    voxelImageDiv.innerHTML = `<img src="${URL.createObjectURL(blob)}" alt="Voxel Projection for ${filename}" />`;
+                    voxelizeResultDiv.textContent = `Voxel projection preview for ${filename} at pitch ${pitch}.`;
+                } else {
+                    // If not an image, it might be a JSON error from the backend if content type wasn't set for error
+                    // Attempt to parse as JSON, but provide a fallback if that fails too
+                    try {
+                        const errorResult = await response.json();
+                        voxelizeResultDiv.textContent = `Voxelization error: ${errorResult.error || "Unexpected content type received: " + blob.type}`;
+                    } catch (parseError) {
+                        voxelizeResultDiv.textContent = `Voxelization error: Unexpected content type (${blob.type}) and response was not valid JSON. Status: ${response.status}`;
+                    }
+                }
             } else {
-                const errorResult = await response.json();
-                voxelizeResultDiv.textContent = `Voxelization error: ${errorResult.error || response.statusText}`;
+                // Attempt to parse as JSON, but provide a fallback if that fails
+                try {
+                    const errorResult = await response.json();
+                    voxelizeResultDiv.textContent = `Voxelization error: ${errorResult.error || response.statusText}`;
+                } catch (parseError) {
+                     voxelizeResultDiv.textContent = `Voxelization error: ${response.status} ${response.statusText}. Response was not valid JSON.`;
+                }
             }
         } catch (error) {
-            console.error('Error during voxelization:', error);
+            console.error('Error during voxelization fetch:', error);
             voxelizeResultDiv.textContent = `An unexpected error occurred during voxelization: ${error.message}`;
         }
+    }
+
+    voxelizeForm.onsubmit = async (e) => {
+        e.preventDefault();
+        const filename = document.getElementById('meshFilename').value;
+        const pitchValue = document.getElementById('voxelPitch').value;
+        fetchAndDisplayVoxelPreview(filename, parseFloat(pitchValue));
     };
+
+    // Event listener for pitch input change
+    voxelPitchInput.addEventListener('input', (event) => {
+        clearTimeout(debounceTimeout);
+        const filename = document.getElementById('meshFilename').value;
+        const pitch = event.target.value; // The current value from the input field
+
+        if (filename && pitch) { // Ensure pitch is not empty before parsing
+            debounceTimeout = setTimeout(() => {
+                fetchAndDisplayVoxelPreview(filename, parseFloat(pitch));
+            }, 500); // 500ms delay
+        } else if (!filename) {
+            // Optionally, provide feedback if filename is missing when pitch changes
+            // voxelizeResultDiv.textContent = 'Please select a mesh first before changing pitch.';
+        }
+    });
 </script>
 </body>
 </html>
